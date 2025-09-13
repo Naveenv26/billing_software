@@ -57,12 +57,14 @@ export default function Billing() {
 
   // ✏️ Update qty (no stock restriction)
   const updateQty = (id, newQty) => {
-    setCart((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, qty: Math.max(1, newQty) } : c
-      )
-    );
-  };
+  setCart((prev) =>
+    prev.map((c) =>
+      c.id === id ? { ...c, qty: newQty } : c
+    )
+  );
+};
+
+
 
   // 🧮 Totals
   const subtotal = cart.reduce((sum, c) => sum + c.qty * Number(c.price), 0);
@@ -239,15 +241,17 @@ export default function Billing() {
                     >
                       -
                     </button>
-                    <input
+                   <input
                       type="number"
+                      step="0.01"
                       value={c.qty}
-                      min="1"
-                      onChange={(e) =>
-                        updateQty(c.id, Number(e.target.value))
-                      }
-                      className="w-12 border p-1 rounded text-center"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateQty(c.id, val === "" ? null : Number(val));
+                      }}
+                      className="w-16 border p-1 rounded text-center"
                     />
+
                     <button
                       onClick={() => updateQty(c.id, c.qty + 1)}
                       className="px-2 bg-gray-200 rounded hover:bg-gray-300"
@@ -342,15 +346,17 @@ export default function Billing() {
             </p>
 
             <div id="modal-actions" className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => {
+             <button
+                onClick={async () => {
                   window.print();
                   confirmInvoice();
+                  await load(); // 🔄 refresh products stock after invoice
                 }}
                 className="bg-indigo-600 text-white px-4 py-2 rounded"
               >
                 Print
               </button>
+
               <button
                 onClick={cancelInvoice}
                 className="bg-gray-200 px-4 py-2 rounded"
