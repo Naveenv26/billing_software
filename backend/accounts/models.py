@@ -3,11 +3,11 @@ from django.db import models
 
 class User(AbstractUser):
     class Role(models.TextChoices):
-        SITE_OWNER = 'SITE_OWNER', 'Site Owner'
+        SITE_ADMIN = 'SITE_ADMIN', 'Site Admin'   # 👈 global admin
         SHOP_OWNER = 'SHOP_OWNER', 'Shop Owner'
-        STAFF = 'STAFF', 'Staff'
+        SHOPKEEPER = 'SHOPKEEPER', 'Shop Keeper'
 
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.STAFF)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.SHOPKEEPER)
     shop = models.ForeignKey('shops.Shop', null=True, blank=True, on_delete=models.SET_NULL, related_name='users')
 
     def __str__(self):

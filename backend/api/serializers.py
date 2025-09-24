@@ -5,6 +5,9 @@ from shops.models import Shop, TaxProfile
 from catalog.models import Product
 from customers.models import Customer, LoyaltyAccount
 from sales.models import Invoice, InvoiceItem
+# api/serializers.py
+from rest_framework import serializers
+from shops.models import Shop, SubscriptionPlan, TaxProfile   # 👈 add this
 
 # --- Shops & Tax ---
 class ShopSerializer(serializers.ModelSerializer):
@@ -109,3 +112,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
             )
 
         return invoice
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionPlan
+        fields = '__all__'
+
+class ShopSerializer(serializers.ModelSerializer):
+    active_subscription = SubscriptionPlanSerializer(read_only=True)
+
+    class Meta:
+        model = Shop
+        fields = '__all__'

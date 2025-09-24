@@ -1,29 +1,32 @@
-# backend/api/views.py
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, decorators
+from rest_framework.response import Response
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import viewsets, permissions, response, decorators
-from rest_framework.response import Response
-
 
 from accounts.models import User
-from shops.models import Shop, TaxProfile
+from shops.models import Shop, TaxProfile, SubscriptionPlan
 from catalog.models import Product
 from customers.models import Customer, LoyaltyAccount
 from sales.models import Invoice, InvoiceItem
 
+# --- Serializers ---
 from .serializers import (
     ProductSerializer,
     CustomerSerializer,
-    TaxProfileSerializer,
     UserSerializer,
     InvoiceSerializer,
+)
+from shops.serializers import (
+    ShopSerializer,
+    SubscriptionPlanSerializer,
+    TaxProfileSerializer,
 )
 
 # --- Permissions ---
 class IsShopUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated
+
 
 # --- Product API ---
 class ProductViewSet(viewsets.ModelViewSet):
@@ -35,6 +38,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(shop=self.request.user.shop)
+
 
 # --- Customer API ---
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -48,6 +52,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
         obj = serializer.save(shop=self.request.user.shop)
         LoyaltyAccount.objects.get_or_create(shop=self.request.user.shop, customer=obj)
 
+
 # --- Tax Profile API ---
 class TaxProfileViewSet(viewsets.ModelViewSet):
     serializer_class = TaxProfileSerializer
@@ -55,6 +60,7 @@ class TaxProfileViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return TaxProfile.objects.filter(shop=self.request.user.shop)
+
 
 # --- Current User + Shop Info ---
 class MeViewSet(viewsets.ViewSet):
@@ -67,6 +73,7 @@ class MeViewSet(viewsets.ViewSet):
             shop = Shop.objects.filter(id=request.user.shop_id).values().first()
         return Response({"user": u, "shop": shop})
 
+
 # --- Invoice API ---
 class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
@@ -74,6 +81,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Invoice.objects.filter(shop=self.request.user.shop).order_by('-id')
+
 
 # --- Reports API ---
 class ReportsViewSet(viewsets.ViewSet):
@@ -101,3 +109,23 @@ class ReportsViewSet(viewsets.ViewSet):
     def stock(self, request):
         products = Product.objects.filter(shop=request.user.shop).values("id", "name", "quantity", "price")
         return Response({"products": list(products)})
+
+
+# --- Admin Shops API ---
+class IsSiteAdmin(permissions.BasePermission):
+    """Allow only SITE_ADMIN role users"""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and getattr(request.user, "role", None) == "SITE_ADMIN"
+
+
+class AdminShopViewSet(viewsets.ModelViewSet):
+    queryset = Shop.objects.all().select_related("active_subscription")
+    serializer_class = ShopSerializer
+    permission_classes = [IsSiteAdmin]
+
+    def perform_update(self, serializer):
+        shop = serializer.save()
+        if shop.active_subscription and shop.subscription_end_date:
+            shop.is_active = True
+            shop.save()
+        return shop
