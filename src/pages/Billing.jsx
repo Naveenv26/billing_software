@@ -11,21 +11,50 @@ export default function Billing() {
   const [showModal, setShowModal] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
   const [lastRemoved, setLastRemoved] = useState(null);
+
+  const nameRef = useRef();
+  const mobileRef = useRef();
   const searchRef = useRef();
+  const productRefs = useRef({});
 
-  useEffect(() => {
-    load();
-  }, []);
+  const [searchMatches, setSearchMatches] = useState([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const [highlightedId, setHighlightedId] = useState(null);
 
-  const load = async () => {
-    const res = await getProducts();
-    setProducts(res.data);
+  const shopName = "My Shop Name";
+  const today = new Date().toLocaleDateString();
+
+  // Load products safely
+  const loadProducts = async () => {
+    try {
+      const res = await getProducts();
+      const rawProducts = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res)
+        ? res
+        : [];
+      const normalized = rawProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        unit: p.unit || "",
+        tax_rate: Number(p.tax_rate || 0),
+        stock: Number(p.quantity ?? p.stock ?? p.available_qty ?? 0),
+      }));
+      setProducts(normalized);
+    } catch (err) {
+      console.error("Failed to load products:", err);
+      setProducts([]);
+      alert("Failed to load products. Please login or check network.");
+    }
   };
 
-  // 🔍 Search
-  const handleSearch = (e) => setSearch(e.target.value.toLowerCase());
+  useEffect(() => {
+    loadProducts();
+    nameRef.current?.focus();
+  }, []);
 
-  // ➕ Add to cart (no stock restriction)
+  // Cart operations
   const addToCart = (p) => {
     setCart((prev) => {
       const found = prev.find((c) => c.id === p.id);
@@ -38,16 +67,12 @@ export default function Billing() {
     });
   };
 
-  // ❌ Remove item
   const removeItem = (id) => {
     const removed = cart.find((c) => c.id === id);
-    if (removed) {
-      setLastRemoved(removed);
-    }
+    if (removed) setLastRemoved(removed);
     setCart((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // ↩️ Undo remove
   const undoRemove = () => {
     if (lastRemoved) {
       setCart((prev) => [...prev, lastRemoved]);
@@ -55,27 +80,21 @@ export default function Billing() {
     }
   };
 
-  // ✏️ Update qty (no stock restriction)
   const updateQty = (id, newQty) => {
-  setCart((prev) =>
-    prev.map((c) =>
-      c.id === id ? { ...c, qty: newQty } : c
-    )
-  );
-};
+    setCart((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, qty: newQty } : c))
+    );
+  };
 
-
-
-  // 🧮 Totals
-  const subtotal = cart.reduce((sum, c) => sum + c.qty * Number(c.price), 0);
+  // Totals
+  const subtotal = cart.reduce((sum, c) => sum + c.qty * c.price, 0);
   const tax = cart.reduce(
-    (sum, c) =>
-      sum + (c.qty * Number(c.price) * Number(c.tax_rate || 0)) / 100,
+    (sum, c) => sum + (c.qty * c.price * c.tax_rate) / 100,
     0
   );
   const total = subtotal + tax;
 
-  // 🖨️ Finalize invoice
+  // Finalize invoice
   const finalizeInvoice = async () => {
     try {
       if (!cart.length) {
@@ -88,15 +107,15 @@ export default function Billing() {
         customer_name: customerName || "",
         customer_mobile: customerMobile || "",
         items: cart.map((c) => {
-          const lineTotal = c.qty * Number(c.price);
-          const taxAmt = (lineTotal * Number(c.tax_rate || 0)) / 100;
+          const lineTotal = c.qty * c.price;
+          const taxAmt = (lineTotal * c.tax_rate) / 100;
           return {
             product: c.id,
             qty: c.qty,
-            unit_price: Number(c.price),
-            tax_rate: Number(c.tax_rate || 0),
+            unit_price: c.price,
+            tax_rate: c.tax_rate,
             line_total: lineTotal + taxAmt,
-            oversold: c.qty > (Number(c.quantity ?? c.stock ?? 0) || 0), // ✅ oversold flag
+            oversold: c.qty > c.stock,
           };
         }),
         subtotal,
@@ -109,27 +128,78 @@ export default function Billing() {
       setShowModal(true);
     } catch (err) {
       console.error("Failed to save invoice:", err.response?.data || err);
-      alert("Failed to save invoice");
+      alert("Failed to save invoice. Please try again.");
     }
   };
 
-  // 🖨️ After printing confirm
   const confirmInvoice = () => {
     setCart([]);
     setCustomerName("");
     setCustomerMobile("");
     setSearch("");
+    setHighlightedId(null);
+    setSearchMatches([]);
+    setCurrentMatchIndex(-1);
     setShowModal(false);
+    nameRef.current?.focus();
   };
 
-  // 🛑 Cancel invoice
   const cancelInvoice = () => {
     setCart([]);
     setShowModal(false);
+    nameRef.current?.focus();
   };
 
-  const today = new Date().toLocaleDateString();
-  const shopName = "My Shop Name";
+  // Search + highlight
+  const handleSearchKeys = (e) => {
+    const lowerSearch = search.toLowerCase();
+    const filtered = (products || []).filter((p) =>
+      p.name.toLowerCase().includes(lowerSearch)
+    );
+    const filteredIds = filtered.map((p) => p.id);
+
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (!filteredIds.length) return;
+      const nextIndex =
+        currentMatchIndex + 1 < filteredIds.length ? currentMatchIndex + 1 : 0;
+      setCurrentMatchIndex(nextIndex);
+      setHighlightedId(filteredIds[nextIndex]);
+      scrollToProduct(filteredIds[nextIndex]);
+    }
+
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (!filteredIds.length) return;
+      const prevIndex =
+        currentMatchIndex - 1 >= 0 ? currentMatchIndex - 1 : filteredIds.length - 1;
+      setCurrentMatchIndex(prevIndex);
+      setHighlightedId(filteredIds[prevIndex]);
+      scrollToProduct(filteredIds[prevIndex]);
+    }
+
+    if (e.key === "Enter") {
+      if (currentMatchIndex >= 0 && filteredIds.length > 0) {
+        const prodId = filteredIds[currentMatchIndex];
+        const prod = (products || []).find((p) => p.id === prodId);
+        if (prod) addToCart(prod);
+      }
+    }
+
+    if (!["Enter", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      setSearchMatches(filteredIds);
+      setCurrentMatchIndex(-1);
+      setHighlightedId(null);
+    }
+  };
+
+  const scrollToProduct = (id) => {
+    const element = productRefs.current[id];
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", inline: "center" });
+      setHighlightedId(id);
+    }
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto bg-white shadow rounded">
@@ -146,6 +216,13 @@ export default function Billing() {
           placeholder="Customer Name"
           value={customerName}
           onChange={(e) => setCustomerName(e.target.value)}
+          ref={nameRef}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              mobileRef.current?.focus();
+            }
+          }}
           className="border p-2 rounded w-1/3"
         />
         <input
@@ -153,6 +230,13 @@ export default function Billing() {
           placeholder="Mobile Number"
           value={customerMobile}
           onChange={(e) => setCustomerMobile(e.target.value)}
+          ref={mobileRef}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              searchRef.current?.focus();
+            }
+          }}
           className="border p-2 rounded w-1/3"
         />
       </div>
@@ -163,7 +247,13 @@ export default function Billing() {
           type="text"
           placeholder="Search product..."
           value={search}
-          onChange={handleSearch}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setHighlightedId(null);
+            setSearchMatches([]);
+            setCurrentMatchIndex(-1);
+          }}
+          onKeyDown={handleSearchKeys}
           ref={searchRef}
           className="border p-2 rounded w-full"
         />
@@ -171,32 +261,28 @@ export default function Billing() {
 
       {/* Product Row */}
       <div className="flex gap-4 mb-6 overflow-x-auto border p-3 rounded">
-        {products
-          .filter((p) => p.name.toLowerCase().includes(search))
+        {(products || [])
+          .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
           .map((p) => {
-            const actualStock = Number(p.quantity ?? p.stock ?? 0);
             const orderedItem = cart.find((c) => c.id === p.id);
             const orderedQty = orderedItem ? orderedItem.qty : 0;
-            const oversold =
-              orderedQty > actualStock ? orderedQty - actualStock : 0;
+            const oversold = orderedQty > p.stock ? orderedQty - p.stock : 0;
 
             return (
               <div
                 key={p.id}
-                className={`border p-3 min-w-[150px] rounded flex-shrink-0 cursor-pointer hover:bg-gray-100`}
+                ref={(el) => (productRefs.current[p.id] = el)}
+                className={`border p-3 min-w-[150px] rounded flex-shrink-0 cursor-pointer hover:bg-gray-100 
+                  ${highlightedId === p.id ? "bg-indigo-200" : ""}`}
                 onClick={() => addToCart(p)}
               >
                 <h3 className="font-semibold">{p.name}</h3>
-                <p>
-                  ₹{p.price} ({p.unit})
-                </p>
+                <p>₹{p.price} ({p.unit})</p>
                 <p className="text-sm text-gray-500">Tax: {p.tax_rate}%</p>
                 <p className="text-xs text-gray-600">
-                  Stock: {actualStock} | Ordered: {orderedQty}
+                  Stock: {p.stock} | Ordered: {orderedQty}
                   {oversold > 0 && (
-                    <span className="text-red-600 ml-2">
-                      ⚠ Oversold: {oversold}
-                    </span>
+                    <span className="text-red-600 ml-2">⚠ Oversold: {oversold}</span>
                   )}
                 </p>
               </div>
@@ -204,7 +290,7 @@ export default function Billing() {
           })}
       </div>
 
-      {/* Cart */}
+      {/* Cart Table */}
       <div className="overflow-x-auto">
         <table className="w-full border mb-4 text-sm">
           <thead>
@@ -218,8 +304,8 @@ export default function Billing() {
           </thead>
           <tbody>
             {cart.map((c) => {
-              const lineTotal = c.qty * Number(c.price);
-              const taxAmt = (lineTotal * Number(c.tax_rate || 0)) / 100;
+              const lineTotal = c.qty * c.price;
+              const taxAmt = (lineTotal * c.tax_rate) / 100;
               const totalWithTax = lineTotal + taxAmt;
 
               return (
@@ -241,17 +327,13 @@ export default function Billing() {
                     >
                       -
                     </button>
-                   <input
+                    <input
                       type="number"
                       step="0.01"
                       value={c.qty}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        updateQty(c.id, val === "" ? null : Number(val));
-                      }}
+                      onChange={(e) => updateQty(c.id, Number(e.target.value))}
                       className="w-16 border p-1 rounded text-center"
                     />
-
                     <button
                       onClick={() => updateQty(c.id, c.qty + 1)}
                       className="px-2 bg-gray-200 rounded hover:bg-gray-300"
@@ -260,7 +342,7 @@ export default function Billing() {
                     </button>
                   </td>
                   <td className="p-2 border text-right">₹{c.price}</td>
-                  <td className="p-2 border text-right">{c.tax_rate || 0}%</td>
+                  <td className="p-2 border text-right">{c.tax_rate}%</td>
                   <td className="p-2 border text-right font-semibold">
                     ₹{totalWithTax.toFixed(2)}
                   </td>
@@ -285,24 +367,21 @@ export default function Billing() {
         Finalize Invoice
       </button>
 
-      {/* Bill Modal */}
+      {/* Invoice Modal */}
       {showModal && invoiceData && (
         <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
           <div id="printableBill" className="bg-white w-80 p-6">
+            {/* Header */}
             <div className="text-center mb-2">
               <h2 className="text-lg font-bold">{shopName}</h2>
               <p className="text-sm">Invoice No: {invoiceData.number}</p>
-              <p className="text-sm">
-                {new Date(invoiceData.invoice_date).toLocaleString()}
-              </p>
+              <p className="text-sm">{new Date(invoiceData.invoice_date).toLocaleString()}</p>
             </div>
 
             {(invoiceData.customer_name || invoiceData.customer_mobile) && (
               <p className="mb-2 text-sm">
                 Customer: {invoiceData.customer_name || ""}{" "}
-                {invoiceData.customer_mobile
-                  ? `(${invoiceData.customer_mobile})`
-                  : ""}
+                {invoiceData.customer_mobile ? `(${invoiceData.customer_mobile})` : ""}
               </p>
             )}
 
@@ -334,33 +413,25 @@ export default function Billing() {
             <div className="text-right text-sm space-y-1 mt-2">
               <p>Subtotal: ₹{invoiceData.subtotal}</p>
               <p>Tax: ₹{invoiceData.tax_total}</p>
-              <p className="font-bold">
-                Grand Total: ₹{invoiceData.grand_total}
-              </p>
+              <p className="font-bold">Grand Total: ₹{invoiceData.grand_total}</p>
             </div>
 
             <hr className="my-2 border-t-2 border-gray-400" />
 
-            <p className="text-center mt-4 text-sm">
-              *** Thank you! Visit Again ***
-            </p>
+            <p className="text-center mt-4 text-sm">*** Thank you! Visit Again ***</p>
 
             <div id="modal-actions" className="mt-4 flex justify-end gap-2">
-             <button
+              <button
                 onClick={async () => {
                   window.print();
                   confirmInvoice();
-                  await load(); // 🔄 refresh products stock after invoice
+                  await loadProducts();
                 }}
                 className="bg-indigo-600 text-white px-4 py-2 rounded"
               >
                 Print
               </button>
-
-              <button
-                onClick={cancelInvoice}
-                className="bg-gray-200 px-4 py-2 rounded"
-              >
+              <button onClick={cancelInvoice} className="bg-gray-200 px-4 py-2 rounded">
                 Cancel
               </button>
             </div>
@@ -368,32 +439,34 @@ export default function Billing() {
         </div>
       )}
 
+      {/* PRINT STYLING */}
       <style>{`
-@page {
-  size: auto;
-  margin: 0;
-}
-@media print {
-  body * {
-    visibility: hidden !important;
-  }
-  #printableBill, #printableBill * {
-    visibility: visible !important;
-  }
-  #printableBill {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: calc(100% - 40px) !important;
-    margin: 0 20px !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-  }
-  #modal-actions {
-    display: none !important;
-  }
-}`}</style>
+        @page {
+          size: auto;
+          margin: 0;
+        }
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printableBill, #printableBill * {
+            visibility: visible !important;
+          }
+          #printableBill {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: calc(100% - 40px) !important;
+            margin: 0 20px !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          #modal-actions {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

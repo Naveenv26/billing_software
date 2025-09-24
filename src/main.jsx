@@ -7,21 +7,20 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Billing from "./pages/Billing";
 import Stock from "./pages/Stock";
-import Reports from "./pages/Reports"; // <-- add this page later
+import Reports from "./pages/Reports"; 
 import Layout from "./components/Layout";
-
-function PrivateRoute({ children }) {
-  const token = localStorage.getItem("token");
-  return token ? children : <Navigate to="/login" />;
-}
+import PrivateRoute from "./components/PrivateRoute"; // ✅ import
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
+        {/* Public route */}
         <Route path="/login" element={<Login />} />
+
+        {/* Protected routes */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <PrivateRoute>
               <Layout>
@@ -60,6 +59,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             </PrivateRoute>
           }
         />
+
+        {/* Default route → dashboard if logged in */}
+        <Route path="/" element={<Navigate to="/dashboard" />} />
+
+        {/* Fallback for unknown routes */}
+        <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

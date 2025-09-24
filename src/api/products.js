@@ -1,30 +1,31 @@
-import api from "./axios";
+import client from "./client";
 
-export const listProducts = async () => {
-  const res = await api.get("products/");
+// Get all products
+export const getProducts = async () => {
+  const res = await client.get("products/");
   return res.data;
 };
 
+// Create a new product
 export const createProduct = async (product) => {
-  const res = await api.post("products/", product);
+  const res = await client.post("products/", product);
   return res.data;
 };
 
+// Update a product by ID
 export const updateProduct = async (id, product) => {
-  const res = await api.put(`products/${id}/`, product);
+  const res = await client.put(`products/${id}/`, product);
   return res.data;
 };
 
-// ✅ Soft delete instead of hard delete (to avoid ProtectedError)
+// Soft delete a product by ID (set is_active to false)
 export const deleteProduct = async (id) => {
-  const res = await api.patch(`products/${id}/`, { is_active: false });
+  const res = await client.patch(`products/${id}/`, { is_active: false });
   return res.data;
 };
 
-// Stock report (low stock, out of stock)
-export async function stockReport() {
-  const res = await api.get("products/report/");
+// Get stock report (low stock, out of stock)
+export const stockReport = async () => {
+  const res = await client.get("products/report/");
   return res.data;
-}
-
-export const getProducts = () => api.get("products/");
+};
